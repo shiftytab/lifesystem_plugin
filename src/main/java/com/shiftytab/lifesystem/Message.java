@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class Messages {
+public class Message {
     private File messagesFile;
     protected FileConfiguration messagesConfig;
     protected Logger logger;
@@ -22,7 +22,7 @@ public class Messages {
      * @param path   The plugin data folder path
      * @param logger The plugin logger for error reporting
      */
-    public Messages(File path, Logger logger) {
+    public Message(File path, Logger logger) {
         this.logger = logger;
         this.messagesFile = new File(path, "messages.yml");
 
