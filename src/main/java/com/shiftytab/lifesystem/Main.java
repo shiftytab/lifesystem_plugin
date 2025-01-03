@@ -33,6 +33,10 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
      * Instance of data class
      */
     private Data Data;
+    /**
+     * Instance of config class
+     */
+    public Config Config;
 
     /**
      * On plugin enable
@@ -50,6 +54,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
         /**
          * Instance all class needed
          */
+        Config = new Config(getDataFolder(), getLogger());
         Data = new Data(getDataFolder(), getLogger(), this);
         Message = new Message(getDataFolder(), getLogger());
 
