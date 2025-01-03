@@ -1,5 +1,6 @@
 package com.shiftytab.lifesystem;
 
+import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -58,4 +59,16 @@ public class Config {
         }
     }
 
+    /**
+     * Get config value from `config.yml` by key
+     *
+     * @param key The key to look up in the config file
+     * @return Value of key config
+     */
+    public String getConfig(String key) {
+        if (config == null) {
+            return ChatColor.RED + "Error: config.yml not loaded.";
+        }
+        return config.getString(key, key);
+    }
 }
