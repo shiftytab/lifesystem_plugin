@@ -27,17 +27,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 public class Main extends JavaPlugin implements Listener, TabExecutor {
+    private static final String PREFIX =  ChatColor.DARK_AQUA + "LifeSystem" + ChatColor.AQUA + " » " + ChatColor.RESET;
     private Map<UUID, Integer> playerLives;
     private File configFile;
     private FileConfiguration config;
-    private File messagesFile;
-    private FileConfiguration messagesConfig;
-
+    private Messages Messages;
+    
     @Override
     public void onEnable() {
         playerLives = new ConcurrentHashMap<>();
         loadPlayerLives();
-        loadMessages();
+        Messages = new Messages(getDataFolder(), getLogger());
+        
         Bukkit.getServer().getPluginManager().registerEvents(this, this);
         getCommand("lifesystem").setExecutor(this);
         getCommand("lifesystem").setTabCompleter(this);
@@ -52,46 +53,6 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
         getLogger().info("LifeSystem plugin disabled. All data has been saved.");
     }
 
-    private void loadMessages() {
-        messagesFile = new File(getDataFolder(), "messages.yml");
-
-        if (!messagesFile.exists()) {
-            try {
-                if (messagesFile.createNewFile()) {
-                    messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
-
-                    Map<String, String> defaultMessages = new HashMap<>();
-                    defaultMessages.put("prefix", "&3LifeSystem &b» &r");
-                    defaultMessages.put("no_permission", "&cYou do not have permission to use this command.");
-                    defaultMessages.put("invalid_player", "&cThe specified player could not be found or is offline.");
-                    defaultMessages.put("invalid_action", "&cInvalid action. Use add, set, or remove.");
-                    defaultMessages.put("usage_lifesystem", "&cUsage: /lifesystem <add|set|remove> <player> [amount]");
-                    defaultMessages.put("added_lives", "&aYou have added %amount% lives to %player%. Total: %total%.");
-                    defaultMessages.put("removed_lives", "&aYou have removed %amount% lives from %player%. Total: %total%.");
-                    defaultMessages.put("set_lives", "&aYou have set %player%'s lives to %amount%.");
-                    defaultMessages.put("no_lives_left", "&cYou have no lives left and have been removed by an administrator.");
-                    defaultMessages.put("player_lives", "&a%player% has %lives% lives.");
-                    defaultMessages.put("your_lives", "&aYou have %lives% lives.");
-
-                    for (Map.Entry<String, String> entry : defaultMessages.entrySet()) {
-                        messagesConfig.set(entry.getKey(), entry.getValue());
-                    }
-
-                    messagesConfig.save(messagesFile);
-                    getLogger().info("Default messages.yml file created successfully.");
-                }
-            } catch (IOException e) {
-                getLogger().log(Level.SEVERE, "Could not create messages.yml", e);
-            }
-        } else {
-            messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
-        }
-    }
-
-    public String getMessage(String key) {
-        return ChatColor.translateAlternateColorCodes('&', messagesConfig.getString(key, key));
-    }
-
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!command.getName().equalsIgnoreCase("lifesystem") && !command.getName().equalsIgnoreCase("lifes") && !command.getName().equalsIgnoreCase("life")) {
@@ -100,12 +61,12 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
 
         if (command.getName().equalsIgnoreCase("lifesystem")) {
             if (!(sender.hasPermission("lifesystem.admin"))) {
-                sender.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+                sender.sendMessage(PREFIX + Messages.getMessage("no_permission"));
                 return true;
             }
 
             if (args.length < 2) {
-                sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                sender.sendMessage(PREFIX + Messages.getMessage("usage_lifesystem"));
                 return true;
             }
 
@@ -113,7 +74,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
             Player target = Bukkit.getPlayer(args[1]);
 
             if (target == null) {
-                sender.sendMessage(getMessage("prefix") + getMessage("invalid_player"));
+                sender.sendMessage(PREFIX + Messages.getMessage("invalid_player"));
                 return true;
             }
 
@@ -123,50 +84,50 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
             try {
                 if (action.equals("add")) {
                     if (args.length < 3) {
-                        sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                        sender.sendMessage(PREFIX + Messages.getMessage("usage_lifesystem"));
                         return true;
                     }
                     int amount = Integer.parseInt(args[2]);
                     updatePlayerLives(targetUUID, currentLives + amount);
-                    sender.sendMessage(getMessage("prefix") + getMessage("added_lives")
+                    sender.sendMessage(PREFIX + Messages.getMessage("added_lives")
                             .replace("%amount%", String.valueOf(amount))
                             .replace("%player%", target.getName())
                             .replace("%total%", String.valueOf(currentLives + amount)));
                 } else if (action.equals("set")) {
                     if (args.length < 3) {
-                        sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                        sender.sendMessage(PREFIX + Messages.getMessage("usage_lifesystem"));
                         return true;
                     }
                     int amount = Integer.parseInt(args[2]);
                     updatePlayerLives(targetUUID, amount);
-                    sender.sendMessage(getMessage("prefix") + getMessage("set_lives")
+                    sender.sendMessage(PREFIX + Messages.getMessage("set_lives")
                             .replace("%amount%", String.valueOf(amount))
                             .replace("%player%", target.getName()));
                 } else if (action.equals("remove")) {
                     if (args.length < 3) {
-                        sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                        sender.sendMessage(PREFIX + Messages.getMessage("usage_lifesystem"));
                         return true;
                     }
                     int amount = Integer.parseInt(args[2]);
                     if (currentLives - amount <= 0) {
                         updatePlayerLives(targetUUID, 0);
-                        target.kickPlayer(getMessage("prefix") + getMessage("no_lives_left"));
-                        sender.sendMessage(getMessage("prefix") + getMessage("removed_lives")
+                        target.kickPlayer(PREFIX + Messages.getMessage("no_lives_left"));
+                        sender.sendMessage(PREFIX + Messages.getMessage("removed_lives")
                                 .replace("%amount%", String.valueOf(amount))
                                 .replace("%player%", target.getName())
                                 .replace("%total%", "0"));
                     } else {
                         updatePlayerLives(targetUUID, currentLives - amount);
-                        sender.sendMessage(getMessage("prefix") + getMessage("removed_lives")
+                        sender.sendMessage(PREFIX + Messages.getMessage("removed_lives")
                                 .replace("%amount%", String.valueOf(amount))
                                 .replace("%player%", target.getName())
                                 .replace("%total%", String.valueOf(currentLives - amount)));
                     }
                 } else {
-                    sender.sendMessage(getMessage("prefix") + getMessage("invalid_action"));
+                    sender.sendMessage(PREFIX + Messages.getMessage("invalid_action"));
                 }
             } catch (NumberFormatException e) {
-                sender.sendMessage(getMessage("prefix") + getMessage("invalid_action"));
+                sender.sendMessage(PREFIX + Messages.getMessage("invalid_action"));
             }
         }
 
@@ -177,9 +138,9 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
                     UUID uuid = player.getUniqueId();
 
                     int lives = playerLives.getOrDefault(uuid, 3);
-                    player.sendMessage(getMessage("prefix") + getMessage("your_lives").replace("%lives%", String.valueOf(lives)));
+                    player.sendMessage(PREFIX + Messages.getMessage("your_lives").replace("%lives%", String.valueOf(lives)));
                 } else {
-                    sender.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+                    sender.sendMessage(PREFIX + Messages.getMessage("no_permission"));
                 }
             } else if (args.length == 1) {
                 if (sender.hasPermission("lifesystem.viewothers")) {
@@ -189,17 +150,17 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
                         UUID targetUUID = target.getUniqueId();
                         int targetLives = playerLives.getOrDefault(targetUUID, 3);
 
-                        sender.sendMessage(getMessage("prefix") + getMessage("player_lives")
+                        sender.sendMessage(PREFIX + Messages.getMessage("player_lives")
                                 .replace("%player%", target.getName())
                                 .replace("%lives%", String.valueOf(targetLives)));
                     } else {
-                        sender.sendMessage(getMessage("prefix") + getMessage("invalid_player"));
+                        sender.sendMessage(PREFIX + Messages.getMessage("invalid_player"));
                     }
                 } else {
-                    sender.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+                    sender.sendMessage(PREFIX + Messages.getMessage("no_permission"));
                 }
             } else {
-                sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                sender.sendMessage(PREFIX + Messages.getMessage("usage_lifesystem"));
             }
             return true;
         }
@@ -243,7 +204,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
             updatePlayerLives(uuid, lives + 1);
 
             player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_HIT, 1.0f, 1.0f);
-            player.sendMessage(getMessage("prefix") + getMessage("added_lives")
+            player.sendMessage(PREFIX + Messages.getMessage("added_lives")
                     .replace("%amount%", "1")
                     .replace("%player%", player.getName())
                     .replace("%total%", String.valueOf(lives + 1)));
@@ -272,10 +233,10 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
         playerLives.put(uuid, lives);
 
         if (lives <= 0) {
-            player.kickPlayer(getMessage("prefix") + getMessage("no_lives_left"));
+            player.kickPlayer(PREFIX + Messages.getMessage("no_lives_left"));
             getLogger().info("Player " + player.getName() + " was kicked for having no lives.");
         } else {
-            player.sendMessage(getMessage("prefix") + getMessage("your_lives").replace("%lives%", String.valueOf(lives)));
+            player.sendMessage(PREFIX + Messages.getMessage("your_lives").replace("%lives%", String.valueOf(lives)));
             getLogger().info("Player " + player.getName() + " joined with " + lives + " lives.");
         }
     }
@@ -290,11 +251,11 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
 
             if (lives > 1) {
                 updatePlayerLives(uuid, lives - 1);
-                player.sendMessage(getMessage("prefix") + getMessage("your_lives").replace("%lives%", String.valueOf(lives - 1)));
+                player.sendMessage(PREFIX + Messages.getMessage("your_lives").replace("%lives%", String.valueOf(lives - 1)));
                 getLogger().info("Player " + player.getName() + " lost a life. Lives left: " + (lives - 1));
             } else {
                 updatePlayerLives(uuid, 0);
-                player.kickPlayer(getMessage("prefix") + getMessage("no_lives_left"));
+                player.kickPlayer(PREFIX + Messages.getMessage("no_lives_left"));
                 getLogger().info("Player " + player.getName() + " was kicked for having no lives.");
             }
         }
@@ -317,7 +278,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
 
         if (entity != null && entity.getType() == EntityType.VILLAGER && clickedItem != null && clickedItem.getType() == Material.TOTEM_OF_UNDYING) {
             player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
-            player.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+            player.sendMessage(PREFIX + Messages.getMessage("no_permission"));
             event.setCancelled(true);
         }
     }
