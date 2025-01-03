@@ -27,32 +27,68 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 public class Main extends JavaPlugin implements Listener, TabExecutor {
+    /**
+     * Prefix for all commands
+     */
     private static final String PREFIX =  ChatColor.DARK_AQUA + "LifeSystem" + ChatColor.AQUA + " » " + ChatColor.RESET;
-    private Map<UUID, Integer> playerLives;
-    private File configFile;
-    private FileConfiguration config;
+    /**
+     * Instance of message class
+     */
     private Message Message;
-    
+    /**
+     * Instance of data class
+     */
+    private Data Data;
+
+    /**
+     * On plugin enable
+     */
     @Override
     public void onEnable() {
-        playerLives = new ConcurrentHashMap<>();
-        loadPlayerLives();
+
+        /**
+         * Create plugin folder to store differents configuration files
+         */
+        if (!getDataFolder().exists()) {
+            getDataFolder().mkdirs();
+        }
+
+        /**
+         * Instance all class needed
+         */
+        Data = new Data(getDataFolder(), getLogger(), this);
         Message = new Message(getDataFolder(), getLogger());
-        
+
+        /**
+         * Register/Setter events
+         */
         Bukkit.getServer().getPluginManager().registerEvents(this, this);
         getCommand("lifesystem").setExecutor(this);
         getCommand("lifesystem").setTabCompleter(this);
 
-        Bukkit.getScheduler().runTaskTimer(this, this::saveAllPlayerLives, 6000L, 6000L);
+        /**
+         * Good ! This work !
+         */
         getLogger().info("LifeSystem plugin enabled successfully.");
     }
 
+    /**
+     * On plugin disable
+     */
     @Override
     public void onDisable() {
-        saveAllPlayerLives();
+        Data.save();
         getLogger().info("LifeSystem plugin disabled. All data has been saved.");
     }
 
+    /**
+     * Listener on command is typing in chat
+     * @param sender
+     * @param command
+     * @param label
+     * @param args
+     * @return
+     */
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!command.getName().equalsIgnoreCase("lifesystem") && !command.getName().equalsIgnoreCase("lifes") && !command.getName().equalsIgnoreCase("life")) {
@@ -79,7 +115,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
             }
 
             UUID targetUUID = target.getUniqueId();
-            int currentLives = playerLives.getOrDefault(targetUUID, 3);
+            int currentLives = Data.playerLives.getOrDefault(targetUUID, 3);
 
             try {
                 if (action.equals("add")) {
@@ -88,7 +124,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
                         return true;
                     }
                     int amount = Integer.parseInt(args[2]);
-                    updatePlayerLives(targetUUID, currentLives + amount);
+                    Data.update(targetUUID, currentLives + amount);
                     sender.sendMessage(PREFIX + Message.getMessage("added_lives")
                             .replace("%amount%", String.valueOf(amount))
                             .replace("%player%", target.getName())
@@ -99,7 +135,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
                         return true;
                     }
                     int amount = Integer.parseInt(args[2]);
-                    updatePlayerLives(targetUUID, amount);
+                    Data.update(targetUUID, amount);
                     sender.sendMessage(PREFIX + Message.getMessage("set_lives")
                             .replace("%amount%", String.valueOf(amount))
                             .replace("%player%", target.getName()));
@@ -110,14 +146,14 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
                     }
                     int amount = Integer.parseInt(args[2]);
                     if (currentLives - amount <= 0) {
-                        updatePlayerLives(targetUUID, 0);
+                        Data.update(targetUUID, 0);
                         target.kickPlayer(PREFIX + Message.getMessage("no_lives_left"));
                         sender.sendMessage(PREFIX + Message.getMessage("removed_lives")
                                 .replace("%amount%", String.valueOf(amount))
                                 .replace("%player%", target.getName())
                                 .replace("%total%", "0"));
                     } else {
-                        updatePlayerLives(targetUUID, currentLives - amount);
+                        Data.update(targetUUID, currentLives - amount);
                         sender.sendMessage(PREFIX + Message.getMessage("removed_lives")
                                 .replace("%amount%", String.valueOf(amount))
                                 .replace("%player%", target.getName())
@@ -137,7 +173,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
                     Player player = (Player) sender;
                     UUID uuid = player.getUniqueId();
 
-                    int lives = playerLives.getOrDefault(uuid, 3);
+                    int lives = Data.playerLives.getOrDefault(uuid, 3);
                     player.sendMessage(PREFIX + Message.getMessage("your_lives").replace("%lives%", String.valueOf(lives)));
                 } else {
                     sender.sendMessage(PREFIX + Message.getMessage("no_permission"));
@@ -148,7 +184,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
 
                     if (target != null) {
                         UUID targetUUID = target.getUniqueId();
-                        int targetLives = playerLives.getOrDefault(targetUUID, 3);
+                        int targetLives = Data.playerLives.getOrDefault(targetUUID, 3);
 
                         sender.sendMessage(PREFIX + Message.getMessage("player_lives")
                                 .replace("%player%", target.getName())
@@ -200,8 +236,8 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
                 : player.getInventory().getItemInOffHand();
 
         if (event.getAction().toString().contains("RIGHT_CLICK") && item.getType() == Material.TOTEM_OF_UNDYING) {
-            int lives = playerLives.getOrDefault(uuid, 3);
-            updatePlayerLives(uuid, lives + 1);
+            int lives = Data.playerLives.getOrDefault(uuid, 3);
+            Data.update(uuid, lives + 1);
 
             player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_HIT, 1.0f, 1.0f);
             player.sendMessage(PREFIX + Message.getMessage("added_lives")
@@ -224,13 +260,17 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
         }
     }
 
+    /**
+     * Listener: On Player join server
+     * @param event
+     */
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        int lives = playerLives.getOrDefault(uuid, config.contains(uuid.toString()) ? config.getInt(uuid.toString()) : 3);
-        playerLives.put(uuid, lives);
+        int lives = Data.playerLives.getOrDefault(uuid, Data.config.contains(uuid.toString()) ? Data.config.getInt(uuid.toString()) : 3);
+        Data.playerLives.put(uuid, lives);
 
         if (lives <= 0) {
             player.kickPlayer(PREFIX + Message.getMessage("no_lives_left"));
@@ -241,20 +281,24 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
         }
     }
 
+    /**
+     * Listener: On player dying
+     * @param event
+     */
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
         UUID uuid = player.getUniqueId();
 
-        if (playerLives.containsKey(uuid)) {
-            int lives = playerLives.get(uuid);
+        if (Data.playerLives.containsKey(uuid)) {
+            int lives = Data.playerLives.get(uuid);
 
             if (lives > 1) {
-                updatePlayerLives(uuid, lives - 1);
+                Data.update(uuid, lives - 1);
                 player.sendMessage(PREFIX + Message.getMessage("your_lives").replace("%lives%", String.valueOf(lives - 1)));
                 getLogger().info("Player " + player.getName() + " lost a life. Lives left: " + (lives - 1));
             } else {
-                updatePlayerLives(uuid, 0);
+                Data.update(uuid, 0);
                 player.kickPlayer(PREFIX + Message.getMessage("no_lives_left"));
                 getLogger().info("Player " + player.getName() + " was kicked for having no lives.");
             }
@@ -266,7 +310,7 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        playerLives.remove(uuid);
+        Data.playerLives.remove(uuid);
         getLogger().info("Player " + player.getName() + " left the server. Data removed from memory.");
     }
 
@@ -288,40 +332,5 @@ public class Main extends JavaPlugin implements Listener, TabExecutor {
             return (Entity) event.getClickedInventory().getHolder();
         }
         return null;
-    }
-
-    private void loadPlayerLives() {
-        configFile = new File(getDataFolder(), "data.yml");
-        config = YamlConfiguration.loadConfiguration(configFile);
-
-        for (String key : config.getKeys(false)) {
-            UUID uuid = UUID.fromString(key);
-            int lives = config.getInt(key);
-            playerLives.put(uuid, lives);
-        }
-        getLogger().info("All life data loaded into memory.");
-    }
-
-    private void saveAllPlayerLives() {
-        for (Map.Entry<UUID, Integer> entry : playerLives.entrySet()) {
-            config.set(entry.getKey().toString(), entry.getValue());
-        }
-        try {
-            config.save(configFile);
-            getLogger().info("All life data has been saved.");
-        } catch (IOException e) {
-            getLogger().log(Level.WARNING, "Error while saving life data!", e);
-        }
-    }
-
-    private void updatePlayerLives(UUID uuid, int lives) {
-        playerLives.put(uuid, lives);
-        config.set(uuid.toString(), lives);
-
-        try {
-            config.save(configFile);
-        } catch (IOException e) {
-            getLogger().log(Level.WARNING, "Error while saving lives for player: " + uuid, e);
-        }
     }
 }
