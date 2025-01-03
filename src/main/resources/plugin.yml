@@ -1,4 +1,15 @@
 name: LifeSystem
 main: com.shiftytab.lifesystem.Main
+author: shiftytab
+website: shiftytab.com
 version: 1.0
 api-version: 1.21
+commands:
+  lifesystem:
+    description: Commande pour gérer les vies des joueurs.
+    usage: /<command> <add|set|remove> <player> [amount]
+    permission: lifesystem.admin
+    permission-message: Vous n'avez pas la permission d'exécuter cette commande.
+  lifes:
+    aliases:
+      - life

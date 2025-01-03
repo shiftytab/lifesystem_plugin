@@ -1,6 +1,9 @@
 package com.shiftytab.lifesystem;
 
 import org.bukkit.*;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabExecutor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
@@ -8,70 +11,242 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.entity.EntityResurrectEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.inventory.EquipmentSlot;
-import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.Inventory;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.event.inventory.InventoryClickEvent;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
-public class Main extends JavaPlugin implements Listener {
+public class Main extends JavaPlugin implements Listener, TabExecutor {
     private Map<UUID, Integer> playerLives;
     private File configFile;
     private FileConfiguration config;
+    private File messagesFile;
+    private FileConfiguration messagesConfig;
 
     @Override
     public void onEnable() {
-        this.playerLives = new HashMap<>();
-        updateConfigFiles();
+        playerLives = new ConcurrentHashMap<>();
+        loadPlayerLives();
+        loadMessages();
         Bukkit.getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Lifesystem plugin enabled successfully (new version!!).");
+        getCommand("lifesystem").setExecutor(this);
+        getCommand("lifesystem").setTabCompleter(this);
+
+        Bukkit.getScheduler().runTaskTimer(this, this::saveAllPlayerLives, 6000L, 6000L);
+        getLogger().info("LifeSystem plugin enabled successfully.");
     }
 
     @Override
     public void onDisable() {
-        getLogger().info("Saving player life data...");
-        for (UUID uuid : playerLives.keySet()) {
-            config.set(uuid.toString(), playerLives.get(uuid));
+        saveAllPlayerLives();
+        getLogger().info("LifeSystem plugin disabled. All data has been saved.");
+    }
+
+    private void loadMessages() {
+        messagesFile = new File(getDataFolder(), "messages.yml");
+
+        if (!messagesFile.exists()) {
+            try {
+                if (messagesFile.createNewFile()) {
+                    messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
+
+                    Map<String, String> defaultMessages = new HashMap<>();
+                    defaultMessages.put("prefix", "&3LifeSystem &b» &r");
+                    defaultMessages.put("no_permission", "&cYou do not have permission to use this command.");
+                    defaultMessages.put("invalid_player", "&cThe specified player could not be found or is offline.");
+                    defaultMessages.put("invalid_action", "&cInvalid action. Use add, set, or remove.");
+                    defaultMessages.put("usage_lifesystem", "&cUsage: /lifesystem <add|set|remove> <player> [amount]");
+                    defaultMessages.put("added_lives", "&aYou have added %amount% lives to %player%. Total: %total%.");
+                    defaultMessages.put("removed_lives", "&aYou have removed %amount% lives from %player%. Total: %total%.");
+                    defaultMessages.put("set_lives", "&aYou have set %player%'s lives to %amount%.");
+                    defaultMessages.put("no_lives_left", "&cYou have no lives left and have been removed by an administrator.");
+                    defaultMessages.put("player_lives", "&a%player% has %lives% lives.");
+                    defaultMessages.put("your_lives", "&aYou have %lives% lives.");
+
+                    for (Map.Entry<String, String> entry : defaultMessages.entrySet()) {
+                        messagesConfig.set(entry.getKey(), entry.getValue());
+                    }
+
+                    messagesConfig.save(messagesFile);
+                    getLogger().info("Default messages.yml file created successfully.");
+                }
+            } catch (IOException e) {
+                getLogger().log(Level.SEVERE, "Could not create messages.yml", e);
+            }
+        } else {
+            messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
+        }
+    }
+
+    public String getMessage(String key) {
+        return ChatColor.translateAlternateColorCodes('&', messagesConfig.getString(key, key));
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!command.getName().equalsIgnoreCase("lifesystem") && !command.getName().equalsIgnoreCase("lifes") && !command.getName().equalsIgnoreCase("life")) {
+            return false;
         }
 
-        try {
-            config.save(configFile);
-            getLogger().info("Player life data saved successfully.");
-        } catch (IOException e) {
-            getLogger().log(Level.WARNING, "Failed to save player life data!", e);
+        if (command.getName().equalsIgnoreCase("lifesystem")) {
+            if (!(sender.hasPermission("lifesystem.admin"))) {
+                sender.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+                return true;
+            }
+
+            if (args.length < 2) {
+                sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                return true;
+            }
+
+            String action = args[0].toLowerCase();
+            Player target = Bukkit.getPlayer(args[1]);
+
+            if (target == null) {
+                sender.sendMessage(getMessage("prefix") + getMessage("invalid_player"));
+                return true;
+            }
+
+            UUID targetUUID = target.getUniqueId();
+            int currentLives = playerLives.getOrDefault(targetUUID, 3);
+
+            try {
+                if (action.equals("add")) {
+                    if (args.length < 3) {
+                        sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                        return true;
+                    }
+                    int amount = Integer.parseInt(args[2]);
+                    updatePlayerLives(targetUUID, currentLives + amount);
+                    sender.sendMessage(getMessage("prefix") + getMessage("added_lives")
+                            .replace("%amount%", String.valueOf(amount))
+                            .replace("%player%", target.getName())
+                            .replace("%total%", String.valueOf(currentLives + amount)));
+                } else if (action.equals("set")) {
+                    if (args.length < 3) {
+                        sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                        return true;
+                    }
+                    int amount = Integer.parseInt(args[2]);
+                    updatePlayerLives(targetUUID, amount);
+                    sender.sendMessage(getMessage("prefix") + getMessage("set_lives")
+                            .replace("%amount%", String.valueOf(amount))
+                            .replace("%player%", target.getName()));
+                } else if (action.equals("remove")) {
+                    if (args.length < 3) {
+                        sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+                        return true;
+                    }
+                    int amount = Integer.parseInt(args[2]);
+                    if (currentLives - amount <= 0) {
+                        updatePlayerLives(targetUUID, 0);
+                        target.kickPlayer(getMessage("prefix") + getMessage("no_lives_left"));
+                        sender.sendMessage(getMessage("prefix") + getMessage("removed_lives")
+                                .replace("%amount%", String.valueOf(amount))
+                                .replace("%player%", target.getName())
+                                .replace("%total%", "0"));
+                    } else {
+                        updatePlayerLives(targetUUID, currentLives - amount);
+                        sender.sendMessage(getMessage("prefix") + getMessage("removed_lives")
+                                .replace("%amount%", String.valueOf(amount))
+                                .replace("%player%", target.getName())
+                                .replace("%total%", String.valueOf(currentLives - amount)));
+                    }
+                } else {
+                    sender.sendMessage(getMessage("prefix") + getMessage("invalid_action"));
+                }
+            } catch (NumberFormatException e) {
+                sender.sendMessage(getMessage("prefix") + getMessage("invalid_action"));
+            }
         }
 
-        getLogger().info("Lifesystem plugin disabled.");
+        if (command.getName().equalsIgnoreCase("life") || command.getName().equalsIgnoreCase("lifes")) {
+            if (args.length == 0) {
+                if (sender instanceof Player) {
+                    Player player = (Player) sender;
+                    UUID uuid = player.getUniqueId();
+
+                    int lives = playerLives.getOrDefault(uuid, 3);
+                    player.sendMessage(getMessage("prefix") + getMessage("your_lives").replace("%lives%", String.valueOf(lives)));
+                } else {
+                    sender.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+                }
+            } else if (args.length == 1) {
+                if (sender.hasPermission("lifesystem.viewothers")) {
+                    Player target = Bukkit.getPlayer(args[0]);
+
+                    if (target != null) {
+                        UUID targetUUID = target.getUniqueId();
+                        int targetLives = playerLives.getOrDefault(targetUUID, 3);
+
+                        sender.sendMessage(getMessage("prefix") + getMessage("player_lives")
+                                .replace("%player%", target.getName())
+                                .replace("%lives%", String.valueOf(targetLives)));
+                    } else {
+                        sender.sendMessage(getMessage("prefix") + getMessage("invalid_player"));
+                    }
+                } else {
+                    sender.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+                }
+            } else {
+                sender.sendMessage(getMessage("prefix") + getMessage("usage_lifesystem"));
+            }
+            return true;
+        }
+
+        return true;
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!command.getName().equalsIgnoreCase("lifesystem")) {
+            return Collections.emptyList();
+        }
+
+        List<String> completions = new ArrayList<>();
+        if (args.length == 1) {
+            completions.add("add");
+            completions.add("set");
+            completions.add("remove");
+        } else if (args.length == 2) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                completions.add(player.getName());
+            }
+        } else if (args.length == 3) {
+            completions.add("1");
+            completions.add("5");
+            completions.add("10");
+        }
+        return completions;
     }
 
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
-
-        // Determine the used item (main hand or off hand)
         ItemStack item = event.getHand() == EquipmentSlot.HAND
                 ? player.getInventory().getItemInMainHand()
                 : player.getInventory().getItemInOffHand();
 
         if (event.getAction().toString().contains("RIGHT_CLICK") && item.getType() == Material.TOTEM_OF_UNDYING) {
-            int lives = playerLives.getOrDefault(uuid, 0);
-            playerLives.put(uuid, lives + 1);
-            savePlayerLives(uuid, lives + 1);
+            int lives = playerLives.getOrDefault(uuid, 3);
+            updatePlayerLives(uuid, lives + 1);
 
             player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_HIT, 1.0f, 1.0f);
+            player.sendMessage(getMessage("prefix") + getMessage("added_lives")
+                    .replace("%amount%", "1")
+                    .replace("%player%", player.getName())
+                    .replace("%total%", String.valueOf(lives + 1)));
 
             if (item.getAmount() > 1) {
                 item.setAmount(item.getAmount() - 1);
@@ -83,7 +258,6 @@ public class Main extends JavaPlugin implements Listener {
                 }
             }
 
-            player.sendMessage("+1 vie");
             getLogger().info("Player " + player.getName() + " gained a life. Total: " + (lives + 1));
             event.setCancelled(true);
         }
@@ -94,26 +268,16 @@ public class Main extends JavaPlugin implements Listener {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        updateConfigFiles();
+        int lives = playerLives.getOrDefault(uuid, config.contains(uuid.toString()) ? config.getInt(uuid.toString()) : 3);
+        playerLives.put(uuid, lives);
 
-        if (config.contains(uuid.toString())) {
-            int lives = config.getInt(uuid.toString());
-            playerLives.put(uuid, lives);
-            getLogger().info("Player " + player.getName() + " joined with " + lives + " lives.");
-
-            if (lives <= 0) {
-                player.kickPlayer("You have no lives left!");
-            }
+        if (lives <= 0) {
+            player.kickPlayer(getMessage("prefix") + getMessage("no_lives_left"));
+            getLogger().info("Player " + player.getName() + " was kicked for having no lives.");
         } else {
-            updatePlayerLives(uuid, 3);
-            getLogger().info("New player " + player.getName() + " initialized with 3 lives.");
+            player.sendMessage(getMessage("prefix") + getMessage("your_lives").replace("%lives%", String.valueOf(lives)));
+            getLogger().info("Player " + player.getName() + " joined with " + lives + " lives.");
         }
-    }
-
-    @EventHandler
-    public void OnUseTotem(EntityResurrectEvent event) {
-        event.setCancelled(true);
-        getLogger().info("Entity resurrect event was cancelled.");
     }
 
     @EventHandler
@@ -122,22 +286,16 @@ public class Main extends JavaPlugin implements Listener {
         UUID uuid = player.getUniqueId();
 
         if (playerLives.containsKey(uuid)) {
-            updateConfigFiles();
-            int lives = config.getInt(uuid.toString());
+            int lives = playerLives.get(uuid);
 
             if (lives > 1) {
-                int newLives = lives - 1;
-                updatePlayerLives(uuid, newLives);
-
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', "&3You have " + newLives + " lives left."));
-
-                getLogger().info("Player " + player.getName() + " lost a life. Lives left: " + newLives);
+                updatePlayerLives(uuid, lives - 1);
+                player.sendMessage(getMessage("prefix") + getMessage("your_lives").replace("%lives%", String.valueOf(lives - 1)));
+                getLogger().info("Player " + player.getName() + " lost a life. Lives left: " + (lives - 1));
             } else {
                 updatePlayerLives(uuid, 0);
-                playerLives.remove(uuid);
-                savePlayerLives(uuid, 0);
-                player.kickPlayer("You have no lives left!");
-                getLogger().info("Player " + player.getName() + " has been kicked for having no lives left.");
+                player.kickPlayer(getMessage("prefix") + getMessage("no_lives_left"));
+                getLogger().info("Player " + player.getName() + " was kicked for having no lives.");
             }
         }
     }
@@ -146,6 +304,7 @@ public class Main extends JavaPlugin implements Listener {
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
+
         playerLives.remove(uuid);
         getLogger().info("Player " + player.getName() + " left the server. Data removed from memory.");
     }
@@ -153,17 +312,13 @@ public class Main extends JavaPlugin implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         Player player = (Player) event.getWhoClicked();
-        Inventory clickedInventory = event.getClickedInventory();
+        Entity entity = getClickedEntity(event);
         ItemStack clickedItem = event.getCurrentItem();
 
-        if (clickedInventory != null && clickedItem != null) {
-            Entity entity = getClickedEntity(event);
-            if (entity != null && entity.getType() == EntityType.VILLAGER && clickedItem.getType() == Material.TOTEM_OF_UNDYING) {
-                player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
-                player.sendMessage("You cannot trade this item with the villager!");
-                event.setCancelled(true);
-                getLogger().info("Player " + player.getName() + " attempted an invalid trade with a villager.");
-            }
+        if (entity != null && entity.getType() == EntityType.VILLAGER && clickedItem != null && clickedItem.getType() == Material.TOTEM_OF_UNDYING) {
+            player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+            player.sendMessage(getMessage("prefix") + getMessage("no_permission"));
+            event.setCancelled(true);
         }
     }
 
@@ -174,24 +329,38 @@ public class Main extends JavaPlugin implements Listener {
         return null;
     }
 
-    private void updateConfigFiles() {
-        this.configFile = new File(getDataFolder(), "data.yml");
-        this.config = YamlConfiguration.loadConfiguration(configFile);
+    private void loadPlayerLives() {
+        configFile = new File(getDataFolder(), "data.yml");
+        config = YamlConfiguration.loadConfiguration(configFile);
+
+        for (String key : config.getKeys(false)) {
+            UUID uuid = UUID.fromString(key);
+            int lives = config.getInt(key);
+            playerLives.put(uuid, lives);
+        }
+        getLogger().info("All life data loaded into memory.");
     }
 
-    private void updatePlayerLives(UUID uuid, int life) {
-        playerLives.put(uuid, life);
-        savePlayerLives(uuid, life);
+    private void saveAllPlayerLives() {
+        for (Map.Entry<UUID, Integer> entry : playerLives.entrySet()) {
+            config.set(entry.getKey().toString(), entry.getValue());
+        }
+        try {
+            config.save(configFile);
+            getLogger().info("All life data has been saved.");
+        } catch (IOException e) {
+            getLogger().log(Level.WARNING, "Error while saving life data!", e);
+        }
     }
 
-    private void savePlayerLives(UUID uuid, int life) {
-        config.set(uuid.toString(), life);
+    private void updatePlayerLives(UUID uuid, int lives) {
+        playerLives.put(uuid, lives);
+        config.set(uuid.toString(), lives);
 
         try {
             config.save(configFile);
-            getLogger().info("Saved lives for player UUID: " + uuid);
         } catch (IOException e) {
-            getLogger().log(Level.WARNING, "Failed to save lives for player UUID: " + uuid, e);
+            getLogger().log(Level.WARNING, "Error while saving lives for player: " + uuid, e);
         }
     }
 }
